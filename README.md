@@ -1,3 +1,11 @@
+# Assignment 3: ARC
+
+* This fork is my attempt at an assignment set out as part of MSc Artificial Intelligence course in NUI Galway.
+
+* The task was to create functions to manually solve 3 of the ARC challenges. My solution can be found in:
+  [manual_solve.py](src/manual_solve.py)
+
+
 # The Abstraction and Reasoning Corpus (ARC)
 
 This repository contains the ARC task data, as well as a browser-based interface for humans to try their hand at solving the tasks manually.
