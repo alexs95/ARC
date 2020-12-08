@@ -25,6 +25,9 @@ it is I actually did to come up with a solution. Judging this criteria, I would 
 all of the ones I struggled with simple as once the pattern was found it would be easy to
 implement. For example, 68b16354 would be to swap the rows.
 
+Similarities:
+    concept of a "background"
+
 """
 
 
@@ -47,13 +50,43 @@ def solve_0e206a2e(x):
 
     return x
 
-def solve_b782dc8a(x):
+
+def color_cells(X, curr, prev, color_transitions, visited, wall=8):
+    color = color_transitions[X[prev]]
+    x, y = curr
+    if not(x == -1 or x == X.shape[0] or y == -1 or y == X.shape[1] or X[x][y] == wall or visited[x][y] == 1):
+        X[x][y] = color
+        visited[x][y] = 1
+        for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y)):
+            color_cells(X, neighbour, curr, color_transitions, visited)
+
+
+def find_cells_by_color(X, color):
+    cells = []
+    for x in range(X.shape[0]):
+        for y in range(X.shape[1]):
+            if X[x][y] == color:
+                cells.append((x, y))
+    return cells
+
+
+def solve_b782dc8a(X):
     """This challenge is very simple to solve as a human but will probably be hard to solve programmatically.
     To solve this one, all the black cells are coloured in following an "every second one" pattern.
 
     """
+    # need to handle case where there is only one path to take,
+    # which one is the first one?
+    unique, counts = np.unique(X, return_counts=True)
+    frequencies = np.asarray((unique, counts)).T
+    colors = frequencies[frequencies[:, 1].argsort()].T[0, :2]
+    color_transitions = {colors[0]: colors[1], colors[1]: colors[0]}
+    visited = np.zeros(X.shape)
+    Y = X.copy()
+    for cell in find_cells_by_color(X, colors[1]):
+        color_cells(Y, cell, find_cells_by_color(X, colors[0])[0], color_transitions, visited)
+    return Y
 
-    return x
 
 def solve_5ad4f10b(x):
     """This challenge was one that was mentioned as difficult in the examples provided.
