@@ -29,141 +29,166 @@ Similarities:
     concept of a "background"
 
 """
-from collections import defaultdict
+
 from itertools import combinations, product
-from numpy import linalg, radians
-from math import cos, sin
+from collections import defaultdict
+from numpy import linalg
 import numpy as np
 import json
 import os
 import re
 
 
-def summed_distances(pillars):
-    distances = [
-        linalg.norm(np.array(a) - np.array(b))
-        for a, b in combinations(pillars, 2)
-    ]
-    return sum(distances)
+class ColouredPoint:
+    """An abstraction of a point in the input array providing utility methods and transformations"""
 
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.color = color
 
-def expand(cell, X, background, marker, visited):
-    # targets will always have more than 3 elems in it
-    x, y = cell
-    if x == -1 or x == X.shape[0] or y == -1 or y == X.shape[1] or X[x][y] == background or visited[x][y] == marker:
-        return None
-    else:
-        visited[x][y] = marker
-        colours = [X[x][y]]
-        cells = [cell]
-        for neighbour in ((x, y-1), (x, y+1), (x+1, y), (x-1, y)):
-            expansion = expand(neighbour, X, background, marker, visited)
-            if expansion is not None:
-                colours += expansion[0]
-                cells += expansion[1]
-        return colours, cells
+    def euclidean(self, other):
+        """Euclidean distance between this and another point"""
+        return linalg.norm([self.x - other.x, self.y - other.y])
 
-
-def find_best_support(grouped):
-    supports = [
-        (summed_distances(dimension for (color, dimension) in pillar), pillar)
-        for pillar in product(*[grouped[key] for key in grouped])
-    ]
-    return min(supports, key=lambda x: x[0])[1]
-
-
-def remove_points(colored_points, grouped):
-    for color, point in colored_points:
-        grouped[color].remove((color, point))
-        if len(grouped[color]) == 0:
-            del grouped[color]
-
-
-def find_supports(supports):
-    # Group by color
-    grouped = defaultdict(list)
-    for colours, points in supports:
-        for color, point in zip(colours, points):
-            grouped[color].append((color, point))
-    grouped = dict(grouped)
-
-    supports = []
-    while len(grouped) != 0:
-        support = find_best_support(grouped)
-        if support is not None:
-            supports.append(support)
-            remove_points(support, grouped)
-
-    return supports
-
-
-def rotate_point(point, angle, center_point=(0, 0)):
-    angle = radians(angle)
-    # Shift the point so that center_point becomes the origin
-    rotated = (point[0] - center_point[0], point[1] - center_point[1])
-    rotated = (
-        rotated[0] * cos(angle) - rotated[1] * sin(angle),
-        rotated[0] * sin(angle) + rotated[1] * cos(angle)
-    )
-    # Reverse the shifting we have done
-    rotated = (rotated[0] + center_point[0], rotated[1] + center_point[1])
-    rotated = (round(rotated[0]), round(rotated[1]))
-    return rotated
-
-
-def rotate_colored_polygon(polygon, angle, center_point=(0, 0)):
-    rotated = []
-    for color, point in polygon:
-        rotated_point = rotate_point(point, angle, center_point)
-        rotated.append((color, rotated_point))
-    return rotated
-
-
-def find_supporting_points(shape, support):
-    return [
-        next((x for x in shape if x[0] == color), None)
-        for color, _ in support
-    ]
-
-
-def flip_colored_polygon(polygon, axis):
-    flipped = []
-    for color, point in polygon:
-        if axis == 0:
-            flipped.append((color, (point[0] * -1, point[1])))
-        elif axis == 1:
-            flipped.append((color, (point[0], point[1] * -1)))
-        elif axis == 2:
-            flipped.append((color, (point[1] * -1, point[0])))
+    def rotate(self, degrees):
+        # Based on https://www.onlinemathlearning.com/transformation-review.html
+        if degrees == 90:
+            return ColouredPoint(x=-self.y, y=-self.x, color=self.color)
+        elif degrees == 180:
+            return ColouredPoint(x=-self.x, y=-self.y, color=self.color)
+        elif degrees == 270:
+            return ColouredPoint(x=self.y, y=-self.x, color=self.color)
         else:
-            flipped.append((color, (point[1] * -1, point[0])))
+            raise ValueError("Unsupported degrees: {}".format(degrees))
 
-    return flipped
+    def reflect(self, axis):
+        # Based on https://www.onlinemathlearning.com/transformation-review.html
+        if axis == "x":
+            return ColouredPoint(x=self.x, y=-self.y, color=self.color)
+        elif axis == "y":
+            return ColouredPoint(x=-self.x, y=self.y, color=self.color)
+        elif axis == "x=y":
+            return ColouredPoint(x=self.y, y=self.x, color=self.color)
+        else:
+            raise ValueError("Unsupported axis: {}".format(axis))
 
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y and self.color == other.color
 
-def find_transformation(shape, support):
-    # Matching support should be equidistant
-    for axis in (None, 0, 1, 2, 3):
-        target = shape
-        for degrees in (None, 90, 180, 270):
-            if axis is not None:
-                target = flip_colored_polygon(target, axis)
-            if degrees is not None:
-                target = rotate_colored_polygon(target, degrees)
-            supporting_points = find_supporting_points(target, support)
-            x_diff = support[0][1][0] - supporting_points[0][1][0]
-            y_diff = support[0][1][1] - supporting_points[0][1][1]
-            transformation = [
-                (color, (x + x_diff, y + y_diff))
-                for (color, (x, y)) in target
-            ]
-            if set([t[1] for t in support]) == set([t[1] for t in transformation if t[0] in [c[0] for c in support]]):
-                return transformation
-
-    return None
+    def __str__(self):
+        return "({}: ({}, {}))".format(self.color, self.x, self.y)
 
 
-def solve_0e206a2e(X):
+class Collection:
+    """An abstraction representing a collection of points: provides
+    information about the points and methods that operate the collection as a whole"""
+    def __init__(self, points):
+        points = list(points)
+        self.points = points
+        self.min_x = min(p.x for p in points)
+        self.min_y = min(p.y for p in points)
+        self.max_x = max(p.x for p in points)
+        self.max_y = max(p.y for p in points)
+        self.shape = (self.max_x - self.min_x + 1, self.max_y - self.min_y + 1)
+        self.colors = set([p.color for p in points])
+
+    def asnumpy(self):
+        arr = np.zeros(self.shape)
+        for p in self.points:
+            arr[p.x - self.min_x][p.y - self.min_y] = p.color
+        return arr
+
+    def fill(self, arr, color=None):
+        """Fills arr (numpy array) using the points in this collection. If color is provided each point
+        will be filled with that color rather than the color of the point.
+        """
+        for point in self.points:
+            arr[point.x][point.y] = color if color is not None else point.color
+
+    def translate(self, source, destination):
+        """Translates each point defined by the translation from source (point) to destination (point)"""
+        x_diff = destination.x - source.x
+        y_diff = destination.y - source.y
+        return Collection(
+            ColouredPoint(x=p.x+x_diff, y=p.y+y_diff, color=p.color) for p in self.points
+        )
+
+    def rotate(self, degrees):
+        return Collection(p.rotate(degrees) for p in self.points)
+
+    def reflect(self, axis):
+        return Collection(p.reflect(axis) for p in self.points)
+
+    def __str__(self):
+        return str(self.asnumpy())
+
+    def __eq__(self, other):
+        if len(other.points) == len(self.points):
+            other.points.sort(key=lambda p: (p.x, p.y, p.color))
+            self.points.sort(key=lambda p: (p.x, p.y, p.color))
+            return all(a == b for (a, b) in zip(self.points, other.points))
+        else:
+            return False
+
+
+class Grid:
+    """An abstraction representing the entire input grid - provides information about the input and
+    contains methods to obtain Collections and ColouredPoints"""
+    def __init__(self, X):
+        self.X = X
+        self.visited_mark = -1
+        self.shape = X.shape
+
+    def colors(self):
+        unique, counts = np.unique(self.X, return_counts=True)
+        return {k: v for (k, v) in zip(unique, counts)}
+
+    def get_points_by_color(self, color=None):
+        points = []
+        for x in range(self.X.shape[0]):
+            for y in range(self.X.shape[1]):
+                if self.X[x][y] == color:
+                    points.append(ColouredPoint(x, y, color))
+        return points
+
+    def get_collections(self, exclude_color, match_color=None):
+        collections = []
+        visited = np.zeros(self.X.shape)
+        for x in range(self.X.shape[0]):
+            for y in range(self.X.shape[1]):
+                collection = self._traverse(x, y, visited, exclude_color, match_color)
+                if collection is not None:
+                    print(collection)
+                    collections.append(Collection(collection))
+
+        return collections
+
+    def _traverse(self, x, y, visited, exclude_color, match_color):
+        stop_condition = (
+            x == -1 or x == self.X.shape[0] or
+            y == -1 or y == self.X.shape[1] or
+            self.X[x][y] == exclude_color or
+            visited[x][y] == self.visited_mark or
+            (match_color is not None and self.X[x][y] != match_color)
+        )
+
+        if stop_condition:
+            return None
+        else:
+            visited[x][y] = self.visited_mark
+            point = ColouredPoint(x, y, self.X[x][y])
+            points = [point]
+            for neighbour in ((x, y-1), (x, y+1), (x+1, y), (x-1, y)):
+                nx, ny = neighbour
+                expansion = self._traverse(nx, ny, visited, exclude_color, match_color)
+                if expansion is not None:
+                    points += expansion
+
+            return points
+
+
+def solve_0e206a2e(X, floor=0):
     """I would consider this one the hardest of all my choices. Firstly it was not super easy
     to solve as a human (in comparison to others). But the real difficulty, even after thinking
     about it, I am not fully sure of the exact steps I take to solve it.
@@ -175,72 +200,134 @@ def solve_0e206a2e(X):
 
     """
 
-    # Min distance + different color until x colors
-    # Pick the ones where all colours found are in it
-    # To create supports choose sets which contain all colours of the remaining colors
-    background = 0
-    marker = -1
-    shapes = []
-    visited = np.zeros(X.shape)
-    for x in range(X.shape[0]):
-        for y in range(X.shape[1]):
-            found = expand((x, y), X, background, marker, visited)
-            if found is not None:
-                shapes.append(found)
+    # 4) The solution will be on a blank canvas
+    Y = np.full(X.shape, floor)
 
-    supports = find_supports([(colors, cells) for (colors, cells) in shapes if len(set(colors)) < 4])
-    shapes = list((colors, cells) for (colors, cells) in shapes if len(set(colors)) >= 4)
-    shapes = [
-        [(color, point) for (color, point) in zip(colors, points)]
-        for (colors, points) in shapes
-    ]
-    Y = X.copy()
-    targets = list((shape, support, find_transformation(shape, support)) for shape, support in product(shapes, supports))
-    targets = list(t[2] for t in targets if t[2] is not None)
-    for shape in shapes:
-        for _, (x, y) in shape:
-            Y[x][y] = background
-    for shape in targets:
-        for color, (x, y) in shape:
-            Y[x][y] = color
+    # Extract what is needed from the input
+    X = Grid(X)
+    collections = X.get_collections(floor)
+    colors = X.colors()
+
+    # 1.a) Find the target collections, these need to be transformed to the location
+    # of the corresponding reference points
+    targets = [s for s in collections if len(s.colors) >= len(colors)]
+
+    # 1.b) Find the reference collections, the target collections will be transformed here
+    references = find_references(s for s in collections if len(s.colors) < len(colors))
+
+    # 2) Brute force search on all possibilities
+    for target, reference in product(targets, references):
+        # 3) Try to find a transformation that place the target on reference
+        transformation = find_transformation(target, reference)
+        if transformation is not None:
+            # Draw the shape in the correct location
+            # if a transformation is found
+            transformation.fill(Y)
+            
     return Y
 
 
-def color_cells(X, curr, prev, color_transitions, visited, wall=8):
+def find_references(collections):
+    """The reference points will be the set of points of unique colors that are nearest to each other.
+    I defined "nearest to each other" as the nearest summed euclidean distance between each point
+    
+    collections - list of Collection - points to find references from (the collections
+        will be flattened)
+
+    """
+    
+    references = []
+    
+    # Flatten collections to points
+    points = [p for s in collections for p in s.points]
+    
+    # Greedily find points that are unique in color and have the minimum summed distance
+    while len(points) != 0:
+        support = find_best_reference_set(points)
+        if len(support) > 1:
+            references.append(Collection(support))
+            points = [p for p in points if p not in support]
+
+    return references
+
+
+def find_best_reference_set(points):
+    """Brute force search for the set of points that has minimum summed distance between each point"""
+
+    # Group points by color
+    grouped = defaultdict(list)
+    for point in points:
+        grouped[point.color].append(point)
+
+    # Brute force search on all combinations of unique colors
+    possibilities = product(*[grouped[key] for key in grouped])
+    return min(possibilities, key=summed_distances)
+
+
+def summed_distances(points):
+    return sum(a.euclidean(b) for a, b in combinations(points, 2))
+
+
+def find_transformation(target, reference):
+    """Finds a transformation of collection onto the points in the reference collection"""
+
+    # Find the reference points in each collection by matching them with the colors in the
+    # reference collection
+    target_reference = Collection([p for p in target.points if p.color in reference.colors])
+
+    # Brute force search on all possible transformations
+    for axis in (None, "x", "y", "x=y"):
+        curr = target
+        for degrees in (None, 90, 180, 270):
+            if axis is not None:
+                curr = curr.reflect(axis)
+            if degrees is not None:
+                curr = curr.rotate(degrees)
+
+            # Apply the transformation of one point, to the rest of the points in the target collection
+            corresponding = next(p for p in reference.points if p.color == target_reference.points[0].color)
+            transformation = target_reference.translate(target_reference.points[0], corresponding)
+
+            # If the resulting collection is identical to the reference point collection we have found a match
+            if transformation == reference:
+                # Return target transformed under the same transformation
+                return curr.translate(target_reference.points[0], corresponding)
+
+    return None
+
+
+def solve_b782dc8a(X, wall=8):
+    """This challenge is very simple to solve as a human but will probably be hard to solve programmatically.
+    To solve this one, all the black cells are coloured in following an "every second one" pattern.
+
+    """
+    # Solution will be on a canvas identical to the input
+    Y = X.copy()
+
+    # Extract what is needed from the input
+    X = Grid(X)
+    colors = X.colors()
+    center_color, pattern_color = sorted(colors.items(), key=lambda x: x[1])[:2]
+    starting_points = X.get_points_by_color(pattern_color)
+    center_point = X.get_points_by_color(pattern_color)
+    color_transitions = {center_color: pattern_color, pattern_color: center_color}
+
+    # Paint the pattern starting from each of the shapes stemming from the center point
+    visited = np.zeros(X.shape)
+    for point in starting_points:
+        paint(Y, point, center_point, color_transitions, visited, wall)
+
+    return Y
+
+
+def paint(X, curr, prev, color_transitions, visited, wall):
     color = color_transitions[X[prev]]
     x, y = curr
     if not(x == -1 or x == X.shape[0] or y == -1 or y == X.shape[1] or X[x][y] == wall or visited[x][y] == 1):
         X[x][y] = color
         visited[x][y] = 1
         for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y)):
-            color_cells(X, neighbour, curr, color_transitions, visited)
-
-
-def find_cells_by_color(X, color):
-    cells = []
-    for x in range(X.shape[0]):
-        for y in range(X.shape[1]):
-            if X[x][y] == color:
-                cells.append((x, y))
-    return cells
-
-
-def solve_b782dc8a(X):
-    """This challenge is very simple to solve as a human but will probably be hard to solve programmatically.
-    To solve this one, all the black cells are coloured in following an "every second one" pattern.
-
-    """
-    # need to handle case where there is only one path to take,
-    # which one is the first one?
-    unique, counts = np.unique(X, return_counts=True)
-    frequencies = np.asarray((unique, counts)).T
-    colors = frequencies[frequencies[:, 1].argsort()].T[0, :2]
-    color_transitions = {colors[0]: colors[1], colors[1]: colors[0]}
-    visited = np.zeros(X.shape)
-    Y = X.copy()
-    for cell in find_cells_by_color(X, colors[1]):
-        color_cells(Y, cell, find_cells_by_color(X, colors[0])[0], color_transitions, visited)
-    return Y
+            paint(X, neighbour, curr, color_transitions, visited)
 
 
 def solve_5ad4f10b(x):
@@ -328,5 +415,6 @@ def show_result(x, y, yhat):
     # shape, then y == yhat is just a single bool.
     print(np.all(y == yhat))
 
-if __name__ == "__main__": main()
 
+if __name__ == "__main__":
+    main()
