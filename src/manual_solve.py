@@ -29,14 +29,141 @@ Similarities:
     concept of a "background"
 
 """
-
-
+from collections import defaultdict
+from itertools import combinations, product
+from numpy import linalg, radians
+from math import cos, sin
 import numpy as np
 import json
 import os
 import re
 
-def solve_0e206a2e(x):
+
+def summed_distances(pillars):
+    distances = [
+        linalg.norm(np.array(a) - np.array(b))
+        for a, b in combinations(pillars, 2)
+    ]
+    return sum(distances)
+
+
+def expand(cell, X, background, marker, visited):
+    # targets will always have more than 3 elems in it
+    x, y = cell
+    if x == -1 or x == X.shape[0] or y == -1 or y == X.shape[1] or X[x][y] == background or visited[x][y] == marker:
+        return None
+    else:
+        visited[x][y] = marker
+        colours = [X[x][y]]
+        cells = [cell]
+        for neighbour in ((x, y-1), (x, y+1), (x+1, y), (x-1, y)):
+            expansion = expand(neighbour, X, background, marker, visited)
+            if expansion is not None:
+                colours += expansion[0]
+                cells += expansion[1]
+        return colours, cells
+
+
+def find_best_support(grouped):
+    supports = [
+        (summed_distances(dimension for (color, dimension) in pillar), pillar)
+        for pillar in product(*[grouped[key] for key in grouped])
+    ]
+    return min(supports, key=lambda x: x[0])[1]
+
+
+def remove_points(colored_points, grouped):
+    for color, point in colored_points:
+        grouped[color].remove((color, point))
+        if len(grouped[color]) == 0:
+            del grouped[color]
+
+
+def find_supports(supports):
+    # Group by color
+    grouped = defaultdict(list)
+    for colours, points in supports:
+        for color, point in zip(colours, points):
+            grouped[color].append((color, point))
+    grouped = dict(grouped)
+
+    supports = []
+    while len(grouped) != 0:
+        support = find_best_support(grouped)
+        if support is not None:
+            supports.append(support)
+            remove_points(support, grouped)
+
+    return supports
+
+
+def rotate_point(point, angle, center_point=(0, 0)):
+    angle = radians(angle)
+    # Shift the point so that center_point becomes the origin
+    rotated = (point[0] - center_point[0], point[1] - center_point[1])
+    rotated = (
+        rotated[0] * cos(angle) - rotated[1] * sin(angle),
+        rotated[0] * sin(angle) + rotated[1] * cos(angle)
+    )
+    # Reverse the shifting we have done
+    rotated = (rotated[0] + center_point[0], rotated[1] + center_point[1])
+    rotated = (round(rotated[0]), round(rotated[1]))
+    return rotated
+
+
+def rotate_colored_polygon(polygon, angle, center_point=(0, 0)):
+    rotated = []
+    for color, point in polygon:
+        rotated_point = rotate_point(point, angle, center_point)
+        rotated.append((color, rotated_point))
+    return rotated
+
+
+def find_supporting_points(shape, support):
+    return [
+        next((x for x in shape if x[0] == color), None)
+        for color, _ in support
+    ]
+
+
+def flip_colored_polygon(polygon, axis):
+    flipped = []
+    for color, point in polygon:
+        if axis == 0:
+            flipped.append((color, (point[0] * -1, point[1])))
+        elif axis == 1:
+            flipped.append((color, (point[0], point[1] * -1)))
+        elif axis == 2:
+            flipped.append((color, (point[1] * -1, point[0])))
+        else:
+            flipped.append((color, (point[1] * -1, point[0])))
+
+    return flipped
+
+
+def find_transformation(shape, support):
+    # Matching support should be equidistant
+    for axis in (None, 0, 1, 2, 3):
+        target = shape
+        for degrees in (None, 90, 180, 270):
+            if axis is not None:
+                target = flip_colored_polygon(target, axis)
+            if degrees is not None:
+                target = rotate_colored_polygon(target, degrees)
+            supporting_points = find_supporting_points(target, support)
+            x_diff = support[0][1][0] - supporting_points[0][1][0]
+            y_diff = support[0][1][1] - supporting_points[0][1][1]
+            transformation = [
+                (color, (x + x_diff, y + y_diff))
+                for (color, (x, y)) in target
+            ]
+            if set([t[1] for t in support]) == set([t[1] for t in transformation if t[0] in [c[0] for c in support]]):
+                return transformation
+
+    return None
+
+
+def solve_0e206a2e(X):
     """I would consider this one the hardest of all my choices. Firstly it was not super easy
     to solve as a human (in comparison to others). But the real difficulty, even after thinking
     about it, I am not fully sure of the exact steps I take to solve it.
@@ -48,7 +175,35 @@ def solve_0e206a2e(x):
 
     """
 
-    return x
+    # Min distance + different color until x colors
+    # Pick the ones where all colours found are in it
+    # To create supports choose sets which contain all colours of the remaining colors
+    background = 0
+    marker = -1
+    shapes = []
+    visited = np.zeros(X.shape)
+    for x in range(X.shape[0]):
+        for y in range(X.shape[1]):
+            found = expand((x, y), X, background, marker, visited)
+            if found is not None:
+                shapes.append(found)
+
+    supports = find_supports([(colors, cells) for (colors, cells) in shapes if len(set(colors)) < 4])
+    shapes = list((colors, cells) for (colors, cells) in shapes if len(set(colors)) >= 4)
+    shapes = [
+        [(color, point) for (color, point) in zip(colors, points)]
+        for (colors, points) in shapes
+    ]
+    Y = X.copy()
+    targets = list((shape, support, find_transformation(shape, support)) for shape, support in product(shapes, supports))
+    targets = list(t[2] for t in targets if t[2] is not None)
+    for shape in shapes:
+        for _, (x, y) in shape:
+            Y[x][y] = background
+    for shape in targets:
+        for color, (x, y) in shape:
+            Y[x][y] = color
+    return Y
 
 
 def color_cells(X, curr, prev, color_transitions, visited, wall=8):
