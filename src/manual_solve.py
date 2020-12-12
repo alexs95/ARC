@@ -48,7 +48,7 @@ class ColouredPoint:
         self.color = color
 
     def euclidean(self, other):
-        """Euclidean distance between this and another point"""
+        """Euclidean distance between this and other"""
         return linalg.norm([self.x - other.x, self.y - other.y])
 
     def rotate(self, degrees):
@@ -81,8 +81,11 @@ class ColouredPoint:
 
 
 class Collection:
-    """An abstraction representing a collection of points: provides
-    information about the points and methods that operate the collection as a whole"""
+    """An abstraction representing a collection of points: provides information about the points
+    and methods that operate the collection as a whole
+
+    """
+
     def __init__(self, points):
         points = list(points)
         self.points = points
@@ -101,13 +104,17 @@ class Collection:
 
     def fill(self, arr, color=None):
         """Fills arr (numpy array) using the points in this collection. If color is provided each point
-        will be filled with that color rather than the color of the point.
+        will be filled with color rather than the color of the point.
         """
         for point in self.points:
             arr[point.x][point.y] = color if color is not None else point.color
 
     def translate(self, source, destination):
-        """Translates each point defined by the translation from source (point) to destination (point)"""
+        """Translates each point in the collection defined by the translation
+        from source (point) to destination (point)
+
+        """
+
         x_diff = destination.x - source.x
         y_diff = destination.y - source.y
         return Collection(
@@ -152,40 +159,39 @@ class Grid:
                     points.append(ColouredPoint(x, y, color))
         return points
 
-    def get_collections(self, exclude_color, match_color=None):
+    def get_adjacency_collections(self, avoid_color, match_color=None):
         collections = []
         visited = np.zeros(self.X.shape)
         for x in range(self.X.shape[0]):
             for y in range(self.X.shape[1]):
-                collection = self._traverse(x, y, visited, exclude_color, match_color)
+                collection = self._traverse(x, y, visited, avoid_color, match_color)
                 if collection is not None:
-                    print(collection)
                     collections.append(Collection(collection))
 
         return collections
 
-    def _traverse(self, x, y, visited, exclude_color, match_color):
+    def _traverse(self, x, y, visited, avoid_color, match_color):
         stop_condition = (
             x == -1 or x == self.X.shape[0] or
             y == -1 or y == self.X.shape[1] or
-            self.X[x][y] == exclude_color or
+            self.X[x][y] == avoid_color or
             visited[x][y] == self.visited_mark or
             (match_color is not None and self.X[x][y] != match_color)
         )
 
-        if stop_condition:
-            return None
-        else:
+        if not stop_condition:
             visited[x][y] = self.visited_mark
             point = ColouredPoint(x, y, self.X[x][y])
             points = [point]
             for neighbour in ((x, y-1), (x, y+1), (x+1, y), (x-1, y)):
                 nx, ny = neighbour
-                expansion = self._traverse(nx, ny, visited, exclude_color, match_color)
-                if expansion is not None:
-                    points += expansion
+                new = self._traverse(nx, ny, visited, avoid_color, match_color)
+                if new is not None:
+                    points += new
 
             return points
+
+        return None
 
 
 def solve_0e206a2e(X, floor=0):
@@ -205,23 +211,24 @@ def solve_0e206a2e(X, floor=0):
 
     # Extract what is needed from the input
     X = Grid(X)
-    collections = X.get_collections(floor)
+    collections = X.get_adjacency_collections(floor)
     colors = X.colors()
 
-    # 1.a) Find the target collections, these need to be transformed to the location
+    # 1.a) Find the target collections, these need to be transformed to match the location
     # of the corresponding reference points
-    targets = [s for s in collections if len(s.colors) >= len(colors)]
+    targets = [s for s in collections if len(s.colors) >= len(colors) - 1]
 
-    # 1.b) Find the reference collections, the target collections will be transformed here
-    references = find_references(s for s in collections if len(s.colors) < len(colors))
+    # 1.b) Find the reference collections, the target collections
+    # will be transformed based on these points
+    references = find_references(s for s in collections if len(s.colors) < len(colors) - 1)
 
-    # 2) Brute force search on all possibilities
+    # 2) Brute force search on all (target, reference) possibilities
     for target, reference in product(targets, references):
-        # 3) Try to find a transformation that place the target on reference
+        # 3) Try to find a transformation that places the target on reference
         transformation = find_transformation(target, reference)
         if transformation is not None:
-            # Draw the shape in the correct location
-            # if a transformation is found
+            # Draw the transformed collection in the correct location
+            # if a valid transformation is found
             transformation.fill(Y)
             
     return Y
@@ -241,7 +248,7 @@ def find_references(collections):
     # Flatten collections to points
     points = [p for s in collections for p in s.points]
     
-    # Greedily find points that are unique in color and have the minimum summed distance
+    # Greedily find the set of points that are unique in color and have minimum summed distance
     while len(points) != 0:
         support = find_best_reference_set(points)
         if len(support) > 1:
@@ -252,14 +259,14 @@ def find_references(collections):
 
 
 def find_best_reference_set(points):
-    """Brute force search for the set of points that has minimum summed distance between each point"""
+    """Finds the best set of points that have a minimum summed distance between each point"""
 
     # Group points by color
     grouped = defaultdict(list)
     for point in points:
         grouped[point.color].append(point)
 
-    # Brute force search on all combinations of unique colors
+    # Brute force search on all combinations of points with unique colors
     possibilities = product(*[grouped[key] for key in grouped])
     return min(possibilities, key=summed_distances)
 
@@ -271,10 +278,6 @@ def summed_distances(points):
 def find_transformation(target, reference):
     """Finds a transformation of collection onto the points in the reference collection"""
 
-    # Find the reference points in each collection by matching them with the colors in the
-    # reference collection
-    target_reference = Collection([p for p in target.points if p.color in reference.colors])
-
     # Brute force search on all possible transformations
     for axis in (None, "x", "y", "x=y"):
         curr = target
@@ -284,13 +287,16 @@ def find_transformation(target, reference):
             if degrees is not None:
                 curr = curr.rotate(degrees)
 
+            # Find the reference points in target by matching them with the colors in the
+            # reference collection
+            target_reference = Collection([p for p in curr.points if p.color in reference.colors])
+
             # Apply the transformation of one point, to the rest of the points in the target collection
             corresponding = next(p for p in reference.points if p.color == target_reference.points[0].color)
-            transformation = target_reference.translate(target_reference.points[0], corresponding)
+            transformed = target_reference.translate(target_reference.points[0], corresponding)
 
-            # If the resulting collection is identical to the reference point collection we have found a match
-            if transformation == reference:
-                # Return target transformed under the same transformation
+            # If the resulting collection is identical to the reference point collection it is a match
+            if transformed == reference:
                 return curr.translate(target_reference.points[0], corresponding)
 
     return None
@@ -307,27 +313,42 @@ def solve_b782dc8a(X, wall=8):
     # Extract what is needed from the input
     X = Grid(X)
     colors = X.colors()
-    center_color, pattern_color = sorted(colors.items(), key=lambda x: x[1])[:2]
-    starting_points = X.get_points_by_color(pattern_color)
-    center_point = X.get_points_by_color(pattern_color)
-    color_transitions = {center_color: pattern_color, pattern_color: center_color}
+    # There will only be one center point, so only once cell will be colored
+    # with the center color. Ideallym there should be more than one outward points, otherwise
+    # it is ambiguous which is the center. The code should work either way
+    # by picking one at random if this happens.
+    sorted_colors = sorted(colors.items(), key=lambda x: x[1])
+    center_color, out_color = [c for c, _ in sorted_colors[:2]]
+    center_point = X.get_points_by_color(center_color)[0]
+    color_transitions = {center_color: out_color, out_color: center_color}
 
-    # Paint the pattern starting from each of the shapes stemming from the center point
+    # Paint the pattern starting from the center point
     visited = np.zeros(X.shape)
-    for point in starting_points:
-        paint(Y, point, center_point, color_transitions, visited, wall)
+    paint(Y, (center_point.x, center_point.y), center_color, color_transitions, visited, wall)
 
     return Y
 
 
-def paint(X, curr, prev, color_transitions, visited, wall):
-    color = color_transitions[X[prev]]
-    x, y = curr
-    if not(x == -1 or x == X.shape[0] or y == -1 or y == X.shape[1] or X[x][y] == wall or visited[x][y] == 1):
+def paint(X, point, color, color_transitions, visited, wall):
+    """Recursively paints non-wall points choosing the next color using the color_transitions dict.
+    Points that are already visited are not re-painted.
+
+    """
+    visited_mark = -1
+    x, y = point
+
+    stop_condition = (
+        x == -1 or x == X.shape[0] or
+        y == -1 or y == X.shape[1] or
+        X[x][y] == wall or
+        visited[x][y] == visited_mark
+    )
+
+    if not stop_condition:
         X[x][y] = color
-        visited[x][y] = 1
+        visited[x][y] = visited_mark
         for neighbour in ((x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y)):
-            paint(X, neighbour, curr, color_transitions, visited)
+            paint(X, neighbour, color_transitions[color], color_transitions, visited, wall)
 
 
 def solve_5ad4f10b(x):
