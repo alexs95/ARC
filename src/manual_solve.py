@@ -1,32 +1,91 @@
 #!/usr/bin/python
-"""NUI Galway CT5132/CT5148 Programming and Tools for AI (James McDermott)
+"""NUI Galway CT5148 Programming and Tools for AI (James McDermott)
 
-Solution for Assignment 3: ARC
+CT5148 Assignment 3: ARC
 Student name(s): Alexey Shapovalov
 Student ID(s): XXXXXXXX
+GitHub: https://github.com/alexs95/ARC
 
-To make a decision on which challenge to code up, I looked through
-about 50 - 75 different challenges and tried to come up with and idea on how to solve them.
-What I found is that challenges that I found the hardest to solve were ones where
-I could not figure out the pattern to the solution. However, once I found the pattern, I
-almost always figured they would be fairly easy to implement. As examples to this point,
-these were the challenges I found the hardest to solve:
+Choice of Task
+---------------------------------------------------------------
+I looked through about 50 - 75 different tasks to decide which ones to implement.
+What I found out is that tasks that I found the hardest to solve were ones I could not
+figure out the pattern to the solution. However, once I figured out the pattern, I
+almost always figured they would be fairly easy to implement.
+As examples to this point, these were the tasks I found the hardest to solve:
 6d0160f0 - this took one took the longest to figure out, was at it for at least 15 mins
 44f52bb0 - still not sure if I what I think the answer to this is correct
 68b16354 - convinced myself this one was a bug (looked purely random) before I finally figured it out
+6d58a25d - not sure why it took so long but could not figure it out
 99b1bc43 - I came up with very imaginative theories on what dictates
            the amount of lines coming out of the triangle
-6d58a25d - not sure why it took so long but could not figure it out
 
-Instead of choosing any of the ones I found difficult to solve, the criteria I judged
-the challenges "difficulty" was how hard I thought it would be to solve them programmatically.
-The main feel for this difficulty was when I had to take a minute to figure out what
-it is I actually did to come up with a solution. Judging this criteria, I would consider
-all of the ones I struggled with simple as once the pattern was found it would be easy to
-implement. For example, 68b16354 would be to swap the rows.
+Instead of choosing any of these, the criteria I judged the tasks "difficulty" was how hard
+I thought it would be to solve them programmatically.
+The main "feel" for this difficulty was when I had to take a minute to figure out what
+it is I actually did to come up with a solution. Judging by this criteria, I would consider
+much easier to implement. For example, 68b16354 would be to swap rows.
+
+
+Code structure & GitHub
+---------------------------------------------------------------
+I did all my work on the assignment branch which I merged to master when I was complete.
+The README contains contains comments about the purpose of this fork.
+
+The code is laid out as follows:
+  At first there are three classes representing different levels of abstraction
+  about objects in the task. These provide an API for querying the input.
+  Then each solve_ function with functions that are used in the solutions below
+  each solve_ function.
+
+
+Reflection
+---------------------------------------------------------------
+I would consider the main similarity between these (and all the other) tasks
+pattern matching and interpretation of colors.
+All of the challenges require you to figure out (the pattern) a set of transformations
+to the input grid by interpreting what the colors mean.
+You have a set of examples to figure out this pattern. In my solution the
+three classes contain transformations (and also the function downscale if it was
+implemented more generally), could potentially be used for more than one task.
+The method get_adjacency_collections would be an example of pattern matching.
+The actual solutions would in a way contain the interpretation of the colors.
 
 Similarities:
-    concept of a "background"
+Interpretation: All three solutions had a concept of a "background" on which
+stuff was happening.
+
+Pattern matching: All three required understanding of the idea of the significance of
+cells of equal being color next to each other.
+
+Transformation: 0e206a2e and required understanding geometrical transformation concepts
+(but the transformations themselves were different).
+
+Differences:
+The most obvious difference is that the pattern to solve each task was different.
+
+There was a concept of a path in b782dc8a.
+
+
+Relationship to Chollet paper
+---------------------------------------------------------------
+Sadly as this was our second last assignment I was really stuck for time (could not start as soon
+as I liked as I had to finish previous ones). I only had a chance to skim through the paper so
+this section might be taken with a pinch of salt.. possibly a lot of salt.
+I did want to give it a go. I will read it over Christmas properly for sure,
+I found it very interesting!
+
+My interpretation of the goal of ARC dataset is to provide a dataset that if solved would represent
+a more general artificial intelligence. It explains how state of the art applications of machine
+learning are usually very specific to one narrow task, e.g. playing Go or chess,
+but are not generally intelligent. The ARC dataset sets out to contain general
+tasks that would need to be a solved by an AI that is more generally intelligent.
+The Chollet paper describes a set of priors that an entity can have to solve
+these general tasks. I am thinking these would correspond to the similarities
+in my solutions. For example the concept of rotating, moving, recognising squares
+etc. This would loosely correspond to the three classes at the start of my solution.
+The actual solve_ functions would correspond to the use of these priors to solve the
+tasks, I guess this is what the AI would actually need to have understand.
 
 """
 
@@ -40,7 +99,8 @@ import re
 
 
 class ColouredPoint:
-    """An abstraction of a point in the input array providing utility methods and transformations"""
+    """An abstraction of a point in the input array providing utility methods and
+    transformations on the point"""
 
     def __init__(self, x, y, color):
         self.x = x
@@ -82,8 +142,7 @@ class ColouredPoint:
 
 class Collection:
     """An abstraction representing a collection of points: provides information about the points
-    and methods that operate the collection as a whole
-
+    and methods (transformations) that operate the collection as a whole
     """
 
     def __init__(self, points):
@@ -103,18 +162,19 @@ class Collection:
         return arr
 
     def fill(self, arr, color=None):
-        """Fills arr (numpy array) using the points in this collection. If color is provided each point
-        will be filled with color rather than the color of the point.
+        """Fills arr (numpy array) with the points in this collection. If color is provided each point
+        will be filled with color rather than the color of the point
         """
+
         for point in self.points:
             arr[point.x][point.y] = color if color is not None else point.color
 
     def translate(self, source, destination):
         """Translates each point in the collection defined by the translation
         from source (point) to destination (point)
-
         """
 
+        # Based on https://www.onlinemathlearning.com/transformation-review.html
         x_diff = destination.x - source.x
         y_diff = destination.y - source.y
         return Collection(
@@ -132,26 +192,27 @@ class Collection:
 
     def __eq__(self, other):
         if len(other.points) == len(self.points):
-            other.points.sort(key=lambda p: (p.x, p.y, p.color))
-            self.points.sort(key=lambda p: (p.x, p.y, p.color))
-            return all(a == b for (a, b) in zip(self.points, other.points))
+            sorted_points = sorted(other.points, key=lambda p: (p.x, p.y, p.color))
+            other_sorted_points = sorted(self.points, key=lambda p: (p.x, p.y, p.color))
+            return all(a == b for (a, b) in zip(sorted_points, other_sorted_points))
         else:
             return False
 
 
 class Grid:
-    """An abstraction representing the entire input grid - provides information about the input and
-    contains methods to obtain Collections and ColouredPoints"""
+    """An abstraction representing a grid - provides information about arr and
+    contains methods that return Collections and ColouredPoints"""
     def __init__(self, X):
         self.arr = X
         self.visited_mark = -1
-        self.shape = X.shape
 
     def colors(self):
+        """Returns a color frequency distribution as a dict"""
         unique, counts = np.unique(self.arr, return_counts=True)
         return {k: v for (k, v) in zip(unique, counts)}
 
     def get_points_by_color(self, color=None):
+        """Returns a Collection of all the points that have the same color"""
         points = []
         for x in range(self.arr.shape[0]):
             for y in range(self.arr.shape[1]):
@@ -160,6 +221,12 @@ class Grid:
         return Collection(points)
 
     def get_adjacency_collections(self, avoid_color, match_color=None):
+        """Returns a list of Collection consisting of points that are not avoid_color and have
+        at least one other neighbouring point on either the x-axis or the y-axis
+
+        If match_color is set the points must be that color
+        """
+
         collections = []
         visited = np.zeros(self.arr.shape)
         for x in range(self.arr.shape[0]):
@@ -195,15 +262,31 @@ class Grid:
 
 
 def solve_0e206a2e(X, background=0):
-    """I would consider this one the hardest of all my choices. Firstly it was not super easy
-    to solve as a human (in comparison to others). But the real difficulty, even after thinking
-    about it, I am not fully sure of the exact steps I take to solve it.
+    """I would consider this one to be the hardest of all my choices. It was not super easy
+    to solve as a human (in comparison to others) but also the real difficulty was that
+    even after thinking about it for a while, I was not fully sure of the exact steps
+    I took in my head to solve it.
+
     The steps in my head for solving it are:
     1. Find the shape(s) and the "dots" that the shapes need to be placed on.
     2. Figure out which shape belongs to which set of "dots".
     3. Move the shape(s) into the correct position, judging it by the dots.
     4. Remove the old position of the shape(s).
 
+
+    Algorithm:
+    1. The pattern here was that shapes would need to be connected by at least
+    one neighbour on the horizontal or vertical. The way I figured out the
+    reference "dots" was by creating sets of that that were closest together,
+    my metric for closest was summed distance.
+    2. I brute forced this, just tried every possible combination
+    of shape and set of "dots".
+    3. Move actually corresponded to transform.. you could also rotate, or flip
+    before moving. Also brute forced this step by trying all possibilities
+    of rotating and flipping until I found any match.
+    4. This was easily done by starting with a blank canvas for the solution.
+
+    Tasks solved: All
     """
 
     # 4) The solution will be on a blank canvas
@@ -240,7 +323,6 @@ def find_references(collections):
     
     collections - list of Collection - points to find references from (the collections
         will be flattened)
-
     """
     
     references = []
@@ -303,10 +385,22 @@ def find_transformation(target, reference):
 
 
 def solve_b782dc8a(X, wall=8):
-    """This challenge is very simple to solve as a human but will probably be hard to solve programmatically.
-    To solve this one, all the black cells are coloured in following an "every second one" pattern.
+    """This task is very simple to solve as a human but harder to solve programmatically.
 
+    The steps in my head for solving it are:
+    1. Identify the center point from which I would start the "painting".
+    2. Identify the second color in the every second one pattern judging it
+       by the neighbouring cells that were not the colour of the wall.
+    3. Paint the background until I could not paint anymore.
+
+    Algorithm:
+    1. The center point would be the only point with one color.
+    2. The pattern color would be the second least used color in the grid.
+    3. Painting is terminated when a wall is hit or the limits of the grid are reached.
+
+    Tasks solved: All
     """
+
     # Solution will be on a canvas identical to the input
     Y = X.copy()
 
@@ -323,17 +417,17 @@ def solve_b782dc8a(X, wall=8):
     color_transitions = {center_color: out_color, out_color: center_color}
 
     # Paint the pattern starting from the center point
-    visited = np.zeros(X.shape)
+    visited = np.zeros(X.arr.shape)
     paint(Y, (center_point.x, center_point.y), center_color, color_transitions, visited, wall)
 
     return Y
 
 
 def paint(X, point, color, color_transitions, visited, wall):
-    """Recursively paints non-wall points choosing the next color using the color_transitions dict.
-    Points that are already visited are not re-painted.
-
+    """Recursively paints non-wall points starting from point by choosing the next color
+    using the color_transitions dict. Points that are already visited are not re-painted.
     """
+
     visited_mark = -1
     x, y = point
 
@@ -352,14 +446,32 @@ def paint(X, point, color, color_transitions, visited, wall):
 
 
 def solve_5ad4f10b(X, background=0):
-    """This challenge was one that was mentioned as difficult in the examples provided.
-    As a human it is very simple to solve but the reason I decided to do this attempt this one was
-    because it would be interesting to figure out how to identify the square blocks programmatically.
-    All of the examples have an output of shape (3, 3) but as a human I would know how
-    to solve the same problem with a (4, 4) or a (5, 5), etc. solution. I will try to make my code
-    generalise to all output sizes.
-    The steps to solve this one is to create an array from the "box" coloured squares pattern.
+    """This task was not far off the difficulty of the first task done.
+    It was mentioned as one of the examples provided. As a human it is very simple
+    to solve but I struggled to come up with a pattern that was always true
+    when differentiate which color was which.
 
+    Note:
+    All of the examples have an output of shape (3, 3) but as a human I would know how
+    to solve the same problem with a (4, 4) or a (5, 5), etc. solution. I tried
+    to make the code generalize to this.
+
+    The steps in my head for solving it are:
+    1. Find the square of squares of equal size pattern.
+    2. Downscale the pattern so that each square is of size 1. Also change the color
+    to the other color that is not the background.
+
+    Algorithm:
+    This one did not transfer as smoothly to the same steps when its solved programmatically,
+    I will describe how the steps are achieved though:
+    1. This is handled by treating both colours as the color that contains the square of squares,
+       some condition would fail in the process and nothing would be returned when the
+       wrong color is attempted.
+    2. The size of each side would be the greatest common divisor of all the sides in the
+       square of squares. Downscaling is done pretty much exactly as you would think,
+       all squares are made a size of one.
+
+    Tasks solved: All
     """
 
     # Extract what is needed from the input
@@ -376,8 +488,8 @@ def solve_5ad4f10b(X, background=0):
         backgrounds = box.get_adjacency_collections(color, background)
 
         # The length of the sides of the squares will be the greatest common divisor
-        # of all the sides of the collections
-        sides = [t.shape[0] for t in targets] + [t.shape[1] for t in targets] + [box.shape[0]]
+        # of all the sides in the square of squares
+        sides = [t.shape[0] for t in targets] + [t.shape[1] for t in targets] + [box.arr.shape[0]]
         sides += [b.shape[0] for b in backgrounds] + [b.shape[1] for b in backgrounds]
         side = np.gcd.reduce(sides)
 
@@ -385,12 +497,15 @@ def solve_5ad4f10b(X, background=0):
         # (and not the background color)
         fill_color = next(c for c in colors.keys() if c != color)
 
-        Y = find_solution(box.arr, side, fill_color, background)
+        Y = downscale(box.arr, side, fill_color, background)
         if Y is not None:
             return Y
 
 
-def find_solution(box, side, fill_color, background):
+def downscale(box, side, fill_color, background):
+    """Downscales box by considering each box of length side as one pixel.
+    If a downscaled pixel contains more than on color this returns None"""
+
     w, h = int(box.shape[0] / side), int(box.shape[1] / side)
     Y = np.full((w, h), background)
 
@@ -406,6 +521,9 @@ def find_solution(box, side, fill_color, background):
 
 
 def get_square_color(box, x, y, side):
+    """Gets the color of the square with its top left corner at (x, y) and with the sides being a length of side
+    Returns None if they are not all the same color or if side == 1"""
+
     colors = set()
     for i in range(side-1):
         for j in range(side-1):
