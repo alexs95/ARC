@@ -96,8 +96,8 @@ class Collection:
         self.shape = (self.max_x - self.min_x + 1, self.max_y - self.min_y + 1)
         self.colors = set([p.color for p in points])
 
-    def asnumpy(self):
-        arr = np.zeros(self.shape)
+    def asnumpy(self, background=0):
+        arr = np.full(self.shape, background)
         for p in self.points:
             arr[p.x - self.min_x][p.y - self.min_y] = p.color
         return arr
@@ -143,27 +143,27 @@ class Grid:
     """An abstraction representing the entire input grid - provides information about the input and
     contains methods to obtain Collections and ColouredPoints"""
     def __init__(self, X):
-        self.X = X
+        self.arr = X
         self.visited_mark = -1
         self.shape = X.shape
 
     def colors(self):
-        unique, counts = np.unique(self.X, return_counts=True)
+        unique, counts = np.unique(self.arr, return_counts=True)
         return {k: v for (k, v) in zip(unique, counts)}
 
     def get_points_by_color(self, color=None):
         points = []
-        for x in range(self.X.shape[0]):
-            for y in range(self.X.shape[1]):
-                if self.X[x][y] == color:
+        for x in range(self.arr.shape[0]):
+            for y in range(self.arr.shape[1]):
+                if self.arr[x][y] == color:
                     points.append(ColouredPoint(x, y, color))
-        return points
+        return Collection(points)
 
     def get_adjacency_collections(self, avoid_color, match_color=None):
         collections = []
-        visited = np.zeros(self.X.shape)
-        for x in range(self.X.shape[0]):
-            for y in range(self.X.shape[1]):
+        visited = np.zeros(self.arr.shape)
+        for x in range(self.arr.shape[0]):
+            for y in range(self.arr.shape[1]):
                 collection = self._traverse(x, y, visited, avoid_color, match_color)
                 if collection is not None:
                     collections.append(Collection(collection))
@@ -172,16 +172,16 @@ class Grid:
 
     def _traverse(self, x, y, visited, avoid_color, match_color):
         stop_condition = (
-            x == -1 or x == self.X.shape[0] or
-            y == -1 or y == self.X.shape[1] or
-            self.X[x][y] == avoid_color or
-            visited[x][y] == self.visited_mark or
-            (match_color is not None and self.X[x][y] != match_color)
+                x == -1 or x == self.arr.shape[0] or
+                y == -1 or y == self.arr.shape[1] or
+                self.arr[x][y] == avoid_color or
+                visited[x][y] == self.visited_mark or
+                (match_color is not None and self.arr[x][y] != match_color)
         )
 
         if not stop_condition:
             visited[x][y] = self.visited_mark
-            point = ColouredPoint(x, y, self.X[x][y])
+            point = ColouredPoint(x, y, self.arr[x][y])
             points = [point]
             for neighbour in ((x, y-1), (x, y+1), (x+1, y), (x-1, y)):
                 nx, ny = neighbour
@@ -194,7 +194,7 @@ class Grid:
         return None
 
 
-def solve_0e206a2e(X, floor=0):
+def solve_0e206a2e(X, background=0):
     """I would consider this one the hardest of all my choices. Firstly it was not super easy
     to solve as a human (in comparison to others). But the real difficulty, even after thinking
     about it, I am not fully sure of the exact steps I take to solve it.
@@ -207,11 +207,11 @@ def solve_0e206a2e(X, floor=0):
     """
 
     # 4) The solution will be on a blank canvas
-    Y = np.full(X.shape, floor)
+    Y = np.full(X.shape, background)
 
     # Extract what is needed from the input
     X = Grid(X)
-    collections = X.get_adjacency_collections(floor)
+    collections = X.get_adjacency_collections(background)
     colors = X.colors()
 
     # 1.a) Find the target collections, these need to be transformed to match the location
@@ -314,12 +314,12 @@ def solve_b782dc8a(X, wall=8):
     X = Grid(X)
     colors = X.colors()
     # There will only be one center point, so only once cell will be colored
-    # with the center color. Ideallym there should be more than one outward points, otherwise
+    # with the center color. Ideally there should be more than one outward points, otherwise
     # it is ambiguous which is the center. The code should work either way
     # by picking one at random if this happens.
     sorted_colors = sorted(colors.items(), key=lambda x: x[1])
     center_color, out_color = [c for c, _ in sorted_colors[:2]]
-    center_point = X.get_points_by_color(center_color)[0]
+    center_point = X.get_points_by_color(center_color).points[0]
     color_transitions = {center_color: out_color, out_color: center_color}
 
     # Paint the pattern starting from the center point
@@ -351,7 +351,7 @@ def paint(X, point, color, color_transitions, visited, wall):
             paint(X, neighbour, color_transitions[color], color_transitions, visited, wall)
 
 
-def solve_5ad4f10b(x):
+def solve_5ad4f10b(X, background=0):
     """This challenge was one that was mentioned as difficult in the examples provided.
     As a human it is very simple to solve but the reason I decided to do this attempt this one was
     because it would be interesting to figure out how to identify the square blocks programmatically.
@@ -362,7 +362,59 @@ def solve_5ad4f10b(x):
 
     """
 
-    return x
+    # Extract what is needed from the input
+    X = Grid(X)
+    colors = X.colors()
+    del colors[background]
+
+    # Get the bounding boxes of each unique color
+    bounding_boxes = (Grid(X.get_points_by_color(c).asnumpy(background)) for c in colors.keys())
+
+    for box, color in zip(bounding_boxes, colors.keys()):
+        # Find adjacency collections for both the target color and the background
+        targets = box.get_adjacency_collections(background, color)
+        backgrounds = box.get_adjacency_collections(color, background)
+
+        # The length of the sides of the squares will be the greatest common divisor
+        # of all the sides of the collections
+        sides = [t.shape[0] for t in targets] + [t.shape[1] for t in targets] + [box.shape[0]]
+        sides += [b.shape[0] for b in backgrounds] + [b.shape[1] for b in backgrounds]
+        side = np.gcd.reduce(sides)
+
+        # The fill color of the solution will be the only other color
+        # (and not the background color)
+        fill_color = next(c for c in colors.keys() if c != color)
+
+        Y = find_solution(box.arr, side, fill_color, background)
+        if Y is not None:
+            return Y
+
+
+def find_solution(box, side, fill_color, background):
+    w, h = int(box.shape[0] / side), int(box.shape[1] / side)
+    Y = np.full((w, h), background)
+
+    for x in range(w):
+        for y in range(h):
+            square_color = get_square_color(box, x*side, y*side, side)
+            if square_color is not None:
+                if square_color != background:
+                    Y[x][y] = fill_color
+            else:
+                return None
+    return Y
+
+
+def get_square_color(box, x, y, side):
+    colors = set()
+    for i in range(side-1):
+        for j in range(side-1):
+            colors.add(box[x + i][y + j])
+    if len(colors) == 1:
+        return colors.pop()
+    else:
+        return None
+
 
 
 def main():
