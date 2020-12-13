@@ -112,6 +112,8 @@ class ColouredPoint:
         return linalg.norm([self.x - other.x, self.y - other.y])
 
     def rotate(self, degrees):
+        """Returns a new point by rotating this one about the origin (0, 0) by the given degrees"""
+
         # Based on https://www.onlinemathlearning.com/transformation-review.html
         if degrees == 90:
             return ColouredPoint(x=-self.y, y=-self.x, color=self.color)
@@ -123,6 +125,8 @@ class ColouredPoint:
             raise ValueError("Unsupported degrees: {}".format(degrees))
 
     def reflect(self, axis):
+        """Returns a new point by reflecting this one across the given axis"""
+
         # Based on https://www.onlinemathlearning.com/transformation-review.html
         if axis == "x":
             return ColouredPoint(x=self.x, y=-self.y, color=self.color)
@@ -142,7 +146,7 @@ class ColouredPoint:
 
 class Collection:
     """An abstraction representing a collection of points: provides information about the points
-    and methods (transformations) that operate the collection as a whole
+    and methods (transformations) that operate the collection as a whole.
     """
 
     def __init__(self, points):
@@ -272,7 +276,6 @@ def solve_0e206a2e(X, background=0):
     2. Figure out which shape belongs to which set of "dots".
     3. Move the shape(s) into the correct position, judging it by the dots.
     4. Remove the old position of the shape(s).
-
 
     Algorithm:
     1. The pattern here was that shapes would need to be connected by at least
@@ -505,6 +508,9 @@ def solve_5ad4f10b(X, background=0):
 def downscale(box, side, fill_color, background):
     """Downscales box by considering each box of length side as one pixel.
     If a downscaled pixel contains more than on color this returns None"""
+
+    if side == 1:
+        return None
 
     w, h = int(box.shape[0] / side), int(box.shape[1] / side)
     Y = np.full((w, h), background)
