@@ -6,7 +6,7 @@ This was a Programming module and the task was to choose any 3 or more tasks fro
   directory (we will not use the data/evaluation directory at all), and write a hand-coded solution for
   each one.
   
-The task ids I chose were and  my solution can be found in [manual_solve.py](src/manual_solve.py)
+The task ids I chose were 0e206a2e, 5ad4f10b and b782dc8a, my solution can be found in [manual_solve.py](src/manual_solve.py)
 
   
 # The Abstraction and Reasoning Corpus (ARC)
